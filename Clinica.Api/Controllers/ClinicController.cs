@@ -2,6 +2,7 @@
 using Microsoft.Data.SqlClient;
 using Clinica.Api.Controllers.Models;
 using System.Data;
+using System.Text.RegularExpressions;
 
 
 namespace Clinica.Api.Controllers
@@ -11,11 +12,13 @@ namespace Clinica.Api.Controllers
 
     
     public class ClinicController : Controller
-    { 
+    {
+        private string _connectionString = "Server=tcp:larinesql.database.windows.net,1433;Database=larinedb;User ID=larine;Password=475Z3A!!@@RikM;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;";
         [HttpPost(Name = "SavePeople")]
         public IActionResult SavePeople([FromBody] People people)
         {
-            var connection = new SqlConnection("Server=tcp:larinesql.database.windows.net,1433;Database=larinedb;User ID=larine;Password=475Z3A!!@@RikM;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;");
+            string cpfFormatado = FormatarCPF(people.Cpf);
+            var connection = new SqlConnection(_connectionString);
             connection.Open();
             // A validação se o CPF já existe na base de dados pode ser feita antes do INSERT
             if (NumeroCpfsEncontrados(people.Cpf) > 0)
@@ -27,7 +30,7 @@ namespace Clinica.Api.Controllers
                 return BadRequest("Este endereço de email já está cadastrado em nossa base de dados. Por favor, utilize um email diferente ");
             }
             var command = new SqlCommand("INSERT INTO clinica (Cpf, Nome, Nascimento, Email, Tel, Inclusao) VALUES (@Cpf, @Nome, @Nascimento, @Email, @Tel, @Inclusao)", connection);
-            command.Parameters.AddWithValue("@Cpf", people.Cpf);
+            command.Parameters.AddWithValue("@Cpf", cpfFormatado);
             command.Parameters.AddWithValue("@Nome", people.Nome);
             command.Parameters.AddWithValue("@Nascimento", people.Nascimento);
             command.Parameters.AddWithValue("@Email", people.Email);
@@ -51,7 +54,7 @@ namespace Clinica.Api.Controllers
         // com aquele mesmo número foram encontrados.
         private int NumeroCpfsEncontrados(string NumeroCpf) 
         { 
-            var connection = new SqlConnection("Server=tcp:larinesql.database.windows.net,1433;Database=larinedb;User ID=larine;Password=475Z3A!!@@RikM;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;");
+            var connection = new SqlConnection(_connectionString);
             connection.Open ();
             var command = new SqlCommand("SELECT count(*) FROM dbo.clinica WHERE Cpf = @NumeroCpf", connection);
             command.Parameters.AddWithValue("NumeroCpf",NumeroCpf);
@@ -62,7 +65,7 @@ namespace Clinica.Api.Controllers
         //Método criado para consultar em banco de dados se aquele e-mail inserido ja existe na base de dados
         private int NumeroEmailsEncontrados(string NumeroEmail)
         {
-            var connection = new SqlConnection("Server=tcp:larinesql.database.windows.net,1433;Database=larinedb;User ID=larine;Password=475Z3A!!@@RikM;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;");
+            var connection = new SqlConnection(_connectionString);
             connection.Open();
             var command = new SqlCommand("SELECT count(*) FROM dbo.clinica WHERE Email = @NumeroEmail", connection);
             command.Parameters.AddWithValue("NumeroEmail", NumeroEmail);
@@ -70,17 +73,24 @@ namespace Clinica.Api.Controllers
             connection.Close();
             return NumeroEmailsEncontrados;
         }
-
-
-        public static List<People> _people = new List<People>();
-        [HttpGet(Name = "GetPeople")]
-        public IActionResult Get()
+        private string FormatarCPF(string Cpf)
         {
-            var connection = new SqlConnection("Server=tcp:larinesql.database.windows.net,1433;Database=larinedb;User ID=larine;Password=475Z3A!!@@RikM;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;");
-            connection.Open();
-            var command = new SqlCommand("SELECT * FROM dbo.clinica", connection);
-            var reader = command.ExecuteReader();
+            Cpf = Regex.Replace(Cpf, "[^0-9]", "");
+            if (Cpf.Length != 11)
+                throw new ArgumentException("CPF inválido. Deve conter 11 dígitos.");
+            return Convert.ToUInt64(Cpf).ToString(@"000\.000\.000\-00");
+        }
 
+       
+        [HttpGet(Name = "GetPeople")]
+        public IActionResult Get([FromQuery] string Cpf)
+        {
+            var connection = new SqlConnection(_connectionString);
+            connection.Open();
+            var command = new SqlCommand("SELECT * FROM dbo.clinica WHERE Cpf = @NumeroCpf", connection);
+            command.Parameters.AddWithValue("NumeroCpf", Cpf);
+            var reader = command.ExecuteReader();
+            var listCpf = new List<People>();
             while (reader.Read())
             {
                 var people = new People();
@@ -89,10 +99,20 @@ namespace Clinica.Api.Controllers
                 people.Nascimento = reader.GetDateTime(reader.GetOrdinal("Nascimento"));
                 people.Email = reader.GetString(reader.GetOrdinal("Email"));
                 people.Tel = reader.GetInt64(reader.GetOrdinal("Tel"));
-                _people.Add(people);
+                listCpf.Add(people);
+
+               
             }
             connection.Close();
-            return Ok(_people);
+            if(listCpf.Count > 0)
+            {
+                return Ok(listCpf.FirstOrDefault());
+
+
+            }
+            else { return NotFound(); }
+
+            
         }
     }
 }
