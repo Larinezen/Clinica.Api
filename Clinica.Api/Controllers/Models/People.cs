@@ -7,7 +7,7 @@
         public string Cpf { set; get; }  
         public string Email { set; get; }
         public DateTime? Nascimento { set; get; }
-        public long   Tel { set; get; }
+        public string  Tel { set; get; }
 
     }
 }
