@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
-using DocumentValidation;
 using Clinica.Api.Controllers.Models;
 using System.Data;
 using System.Text.RegularExpressions;
@@ -18,37 +17,20 @@ namespace Clinica.Api.Controllers
         [HttpPost(Name = "SavePeople")]
         public IActionResult SavePeople([FromBody] People people)
         {
-            
+            string cpfFormatado = FormatarCPF(people.Cpf);
             var connection = new SqlConnection(_connectionString);
             connection.Open();
-            // Validação de CPF  com base na biblioteca DocumentValidation instalada
-            // Negação ! -- Se o CPF não for validado retornamos BadRequest
-            if (!people.Cpf.ValidateCpf())
-            {
-                return BadRequest("CPF inválido");
-            }
             // A validação se o CPF já existe na base de dados pode ser feita antes do INSERT
             if (NumeroCpfsEncontrados(people.Cpf) > 0)
             {
                 return BadRequest("Este cpf já existe em nossa base de dados");
             }
-            // Validação de email  com base na biblioteca DocumentValidation instalada
-            // Negação ! -- Se o email não for validado retornamos BadRequest
-            if (!people.Email.ValidateEmail())
-            {
-                return BadRequest("E-mail inválido");
-            }
-            if (NumeroEmailsEncontrados(people.Email) > 0)
+            if(NumeroEmailsEncontrados(people.Email) > 0)
             {
                 return BadRequest("Este endereço de email já está cadastrado em nossa base de dados. Por favor, utilize um email diferente ");
             }
-            if (!people.Tel.ValidatePhone())
-            {
-                return BadRequest("Número de telefone inválido");
-            }
-
             var command = new SqlCommand("INSERT INTO clinica (Cpf, Nome, Nascimento, Email, Tel, Inclusao) VALUES (@Cpf, @Nome, @Nascimento, @Email, @Tel, @Inclusao)", connection);
-            command.Parameters.AddWithValue("@Cpf", people.Cpf);
+            command.Parameters.AddWithValue("@Cpf", cpfFormatado);
             command.Parameters.AddWithValue("@Nome", people.Nome);
             command.Parameters.AddWithValue("@Nascimento", people.Nascimento);
             command.Parameters.AddWithValue("@Email", people.Email);
@@ -68,8 +50,6 @@ namespace Clinica.Api.Controllers
             }                
 
         }
-
-         
         // Método criado para que seja possível consultar em banco de dados quantas cpfs
         // com aquele mesmo número foram encontrados.
         private int NumeroCpfsEncontrados(string NumeroCpf) 
@@ -93,11 +73,18 @@ namespace Clinica.Api.Controllers
             connection.Close();
             return NumeroEmailsEncontrados;
         }
-      
+        private string FormatarCPF(string Cpf)
+        {
+            Cpf = Regex.Replace(Cpf, "[^0-9]", "");
+            if (Cpf.Length != 11)
+                throw new ArgumentException("CPF inválido. Deve conter 11 dígitos.");
+            return Convert.ToUInt64(Cpf).ToString(@"000\.000\.000\-00");
+        }
+
        
         [HttpGet(Name = "GetPeople")]
         public IActionResult Get([FromQuery] string Cpf)
-        { 
+        {
             var connection = new SqlConnection(_connectionString);
             connection.Open();
             var command = new SqlCommand("SELECT * FROM dbo.clinica WHERE Cpf = @NumeroCpf", connection);
@@ -111,7 +98,7 @@ namespace Clinica.Api.Controllers
                 people.Nome = reader.GetString(reader.GetOrdinal("Nome"));
                 people.Nascimento = reader.GetDateTime(reader.GetOrdinal("Nascimento"));
                 people.Email = reader.GetString(reader.GetOrdinal("Email"));
-                people.Tel = reader.GetString(reader.GetOrdinal("Tel"));
+                people.Tel = reader.GetInt64(reader.GetOrdinal("Tel"));
                 listCpf.Add(people);
 
                
@@ -119,25 +106,13 @@ namespace Clinica.Api.Controllers
             connection.Close();
             if(listCpf.Count > 0)
             {
-                    var response = new
-                {
-                    Message = "CPF localizado com sucesso !",
-                    
-
-                    };
-                    return Ok(response);
+                return Ok(listCpf.FirstOrDefault());
 
 
             }
-            else {
-                var response = new
-                {
-                    Message = "CPF não localizado"
+            else { return NotFound(); }
 
-                };
-                return BadRequest(response);
-               
-                }     
+            
         }
     }
 }
